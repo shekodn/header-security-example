@@ -20,12 +20,20 @@ func main() {
 	router := httprouter.New()
 
   router.GET("/hello-if", helloIframe)
-  router.GET("/hello-wh", helloWithHeaders)
   router.GET("/hello-ns", helloNoSniff)
 
+  // CSRF Endpoints
+  router.GET("/transfer-csrf", transferMoneyCsrf)
+  router.GET("/transfer", transferMoney)
+
+  // Content Type Endpoints
   router.GET("/hello-ct", helloContentType)
+
+  // Content Security Policy Endpoints
   router.GET("/hello-csp2", helloContentSecurityPolicy2)
   router.GET("/hello-csp", helloContentSecurityPolicy)
+
+  // Unprotected Endpoint
   router.GET("/hello", hello)
 
 	log.Info("Service is ready to listen and serve.")
@@ -34,23 +42,23 @@ func main() {
     log.Panic(err)
   }
 
-  log.Info("Done :D ")
-
 }
 
+// Sample function to simulate XSS
 func getXss(w http.ResponseWriter, r *http.Request) {
     xss := "<script>alert(1);</script>"
     fmt.Fprintf(w, "%s\n", xss)
     fmt.Fprintf(w, "Processing URL %s...\n", r.URL.Path)
 }
 
-// hello returns
+// hello shows a basic XSS attack proof of concept to an unprotected endpoint
 func hello(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
     getXss(w, r)
 }
 
-// helloContentSecurityPolicy returns
+// helloContentSecurityPolicy tries to return an XSS attack, but it fails
+// because Content-Security-Policy blocks inline scripts
 func helloContentSecurityPolicy(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
     w.Header().Set("Content-Security-Policy", "default-src 'self';")
@@ -59,7 +67,11 @@ func helloContentSecurityPolicy(w http.ResponseWriter, r *http.Request, _ httpro
     getXss(w, r)
 }
 
-// helloContentSecurityPolicy2 returns
+// helloContentSecurityPolicy2 tries to return an XSS attack, but it fails
+// because Content-Security-Policy blocks inline scripts. But this type the
+// policy allows to load:
+//    - A third party library
+//    - An image from a third party
 func helloContentSecurityPolicy2(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
     w.Header().Set("Content-Security-Policy",
@@ -111,11 +123,33 @@ func helloIframe(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
     fmt.Fprintf(w, "Processing URL %s...\n", r.URL.Path)
 }
 
-// helloWithHeaders returns
-func helloWithHeaders(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+// CSRF Section
+// Trsnafer Money Endpoint WITHOUT CSRF protection
+func transferMoney(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+    message := `Success you transfered money`
+    log.Info(message)
+    fmt.Fprintf(w, "%s\n", message)
+}
 
-    w.Header().Set("Content-Type", "application/json;")
-    w.Header().Add("X-Content-Type-Options", "nosniff")
+// Trsnafer Money Endpoint WITH CSRF protection
+func transferMoneyCsrf(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
-    getXss(w, r)
+    if !checkCSRFToken(r.Header.Get("X-CSRF-Token")) {
+        w.WriteHeader(http.StatusNotAcceptable)
+
+        fmt.Fprintf(w, "Processing URL %s...\n", r.URL.Path)
+        w.Write([]byte("Invalid CSRF Token"))
+
+        log.Error("Invalid CSRF Token")
+
+        return
+    }
+
+    message := `Success you transfered money`
+    fmt.Fprintf(w, "%s\n", message)
+}
+
+func checkCSRFToken(csrfToken string) bool {
+  // Token logic
+  return false
 }
